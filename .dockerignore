@@ -1,0 +1,8 @@
+.git
+.gitignore
+*.md
+coverage.out
+coverage.html
+gophkeeper
+gophkeeper-server
+.env
