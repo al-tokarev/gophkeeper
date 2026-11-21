@@ -1,10 +1,14 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/al-tokarev/gophkeeper/internal/auth"
@@ -21,6 +25,7 @@ import (
 	userservice "github.com/al-tokarev/gophkeeper/internal/modules/user/service"
 	usertransport "github.com/al-tokarev/gophkeeper/internal/modules/user/transport"
 	"github.com/al-tokarev/gophkeeper/internal/router"
+	"github.com/al-tokarev/gophkeeper/internal/tls"
 	"github.com/al-tokarev/gophkeeper/internal/validation"
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
@@ -95,8 +100,41 @@ func run() error {
 		MaxHeaderBytes:    1 << 20,
 	}
 
-	l.Infow("Server is starting", "addr", server.Addr)
-	return server.ListenAndServe()
+	cert, err := tls.CreateX509Cert()
+	if err != nil {
+		return err
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	errCh := make(chan error, 1)
+	go func() {
+		l.Infow("Server is starting", "addr", server.Addr)
+		if err := server.ListenAndServeTLS(cert.CertFile, cert.KeyFile); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			errCh <- err
+		}
+		close(errCh)
+	}()
+
+	select {
+	case <-ctx.Done():
+		l.Infow("Shutdown signal received")
+	case err := <-errCh:
+		if err != nil {
+			return fmt.Errorf("server error: %w", err)
+		}
+		return nil
+	}
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		return fmt.Errorf("server shutdown: %w", err)
+	}
+	l.Infow("Server stopped gracefully")
+	return nil
 }
 
 func runMigrations(dsn string) error {

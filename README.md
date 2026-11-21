@@ -30,6 +30,16 @@ docker compose down
 docker compose down -v
 ```
 
+## TLS
+
+Сертификаты генерируются автоматически в volume `certs` при первом `docker compose up`.
+
+Клиенту нужен **CA-сертификат** (после запуска контейнера):
+
+```bash
+docker compose cp server:/certs/ca.crt ./ca.crt
+
+
 ## Сборка клиента
 
 Клиент — отдельный бинарник, в Docker не упакован (по ТЗ он распространяется как исполняемый файл под Windows/Linux/macOS).
@@ -41,7 +51,7 @@ go build -o gophkeeper ./cmd/cli
 Сервер по умолчанию — `http://localhost:8080`. Если нужно другой адрес:
 
 ```bash
-GOPHKEEPER_SERVER=http://127.0.0.1:9090 ./gophkeeper list
+GOPHKEEPER_SERVER=https://127.0.0.1:9090 ./gophkeeper list
 ```
 
 ## Проверка
@@ -49,7 +59,7 @@ GOPHKEEPER_SERVER=http://127.0.0.1:9090 ./gophkeeper list
 Регистрация:
 
 ```bash
-curl -i -X POST http://localhost:8080/users \
+curl -i -X POST https://localhost:8080/users \
   -H 'Content-Type: application/json' \
   -d '{"email":"a@b.c","password":"secret"}'
 ```
@@ -59,7 +69,7 @@ curl -i -X POST http://localhost:8080/users \
 Логин:
 
 ```bash
-curl -s -X POST http://localhost:8080/users/login \
+curl -s -X POST https://localhost:8080/users/login \
   -H 'Content-Type: application/json' \
   -d '{"email":"a@b.c","password":"secret"}'
 ```
@@ -69,7 +79,7 @@ curl -s -X POST http://localhost:8080/users/login \
 Создание записи (нужно подставить токен):
 
 ```bash
-curl -i -X POST http://localhost:8080/records \
+curl -i -X POST https://localhost:8080/records \
   -H "Authorization: Bearer <token>" \
   -H 'Content-Type: application/json' \
   -d '{"type":"login","name":"gmail","data":{"login":"a","password":"b"},"metadata":"mail"}'
@@ -80,7 +90,7 @@ curl -i -X POST http://localhost:8080/records \
 Список записей:
 
 ```bash
-curl -i http://localhost:8080/records -H "Authorization: Bearer <token>"
+curl -i https://localhost:8080/records -H "Authorization: Bearer <token>"
 ```
 
 Ожидаемо: `200 OK` и JSON-массив.
@@ -89,10 +99,10 @@ curl -i http://localhost:8080/records -H "Authorization: Bearer <token>"
 
 ```bash
 # регистрация
-./gophkeeper register --email=a@b.c --password=secret
+./gophkeeper register --email=a@b.c
 
 # логин
-./gophkeeper login --email=a@b.c --password=secret
+./gophkeeper login --email=a@b.c
 
 # добавить запись
 ./gophkeeper add --type=login --name=gmail \

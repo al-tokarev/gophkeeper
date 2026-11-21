@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"time"
 )
 
@@ -33,8 +34,13 @@ func (c *Client) CreateRecord(ctx context.Context, rec Record) (*Record, error) 
 }
 
 // ListRecords вызывает GET /records.
-func (c *Client) ListRecords(ctx context.Context) ([]Record, error) {
-	respBody, err := c.do(ctx, "GET", "/records", nil, true)
+func (c *Client) ListRecords(ctx context.Context, searchParam string) ([]Record, error) {
+	var search string
+	if searchParam != "" {
+		search = "?search=" + url.QueryEscape(searchParam)
+	}
+
+	respBody, err := c.do(ctx, "GET", "/records"+search, nil, true)
 	if err != nil {
 		return nil, err
 	}

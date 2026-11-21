@@ -26,9 +26,11 @@ func (h *RecordHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	records, err := h.service.List(r.Context(), userID)
+	searchParam := r.URL.Query().Get("search")
+
+	records, err := h.service.List(r.Context(), userID, searchParam)
 	if err != nil {
-		transport.RespondError(w, http.StatusInternalServerError, "INTERNAL", "error by create")
+		transport.RespondError(w, http.StatusInternalServerError, "INTERNAL", "internal error")
 		return
 	}
 

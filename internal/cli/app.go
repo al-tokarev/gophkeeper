@@ -14,7 +14,7 @@ type Client interface {
 	Login(ctx context.Context, email, password string) error
 	Register(ctx context.Context, email, password string) error
 	CreateRecord(ctx context.Context, rec client.Record) (*client.Record, error)
-	ListRecords(ctx context.Context) ([]client.Record, error)
+	ListRecords(ctx context.Context, searchParam string) ([]client.Record, error)
 	GetRecord(ctx context.Context, id string) (*client.Record, error)
 	UpdateRecord(ctx context.Context, id string, rec client.Record) (*client.Record, error)
 	DeleteRecord(ctx context.Context, id string) (*client.Record, error)
@@ -27,11 +27,16 @@ type App struct {
 	Out    io.Writer
 	Err    io.Writer
 	Client Client
+	Cache  *Cache
 }
 
 // New создаёт App.
 func New(out, errOut io.Writer, c Client) *App {
-	return &App{Out: out, Err: errOut, Client: c}
+	cache, err := NewCache()
+	if err != nil {
+		cache = &Cache{recs: make(map[string]client.Record)}
+	}
+	return &App{Out: out, Err: errOut, Client: c, Cache: cache}
 }
 
 // Run разбирает аргументы, выполняет подкоманду и возвращает ошибку.
@@ -47,7 +52,7 @@ func (a *App) Run(ctx context.Context, args []string) error {
 	case "login":
 		return a.runLogin(ctx, args[1:])
 	case "list":
-		return a.runList(ctx)
+		return a.runList(ctx, args[1:])
 	case "get":
 		return a.runGet(ctx, args[1:])
 	case "add":

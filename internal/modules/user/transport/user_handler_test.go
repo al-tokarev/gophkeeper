@@ -11,8 +11,8 @@ import (
 
 	"github.com/al-tokarev/gophkeeper/internal/auth"
 	"github.com/al-tokarev/gophkeeper/internal/modules/user"
-	"github.com/al-tokarev/gophkeeper/internal/modules/user/repository/mocks"
 	userservice "github.com/al-tokarev/gophkeeper/internal/modules/user/service"
+	usermocks "github.com/al-tokarev/gophkeeper/internal/modules/user/service/mocks"
 	"github.com/al-tokarev/gophkeeper/internal/validation"
 	"github.com/go-chi/chi"
 	"github.com/google/uuid"
@@ -21,10 +21,10 @@ import (
 	"go.uber.org/zap"
 )
 
-func newUserHandler(t *testing.T) (*UserHandler, *mocks.MockUserRepository) {
+func newUserHandler(t *testing.T) (*UserHandler, *usermocks.MockUserRepository) {
 	t.Helper()
 	ctrl := gomock.NewController(t)
-	mockRepo := mocks.NewMockUserRepository(ctrl)
+	mockRepo := usermocks.NewMockUserRepository(ctrl)
 
 	jwt, err := auth.NewJWTManager([]byte("0123456789abcdef0123456789abcdef"), time.Hour)
 	require.NoError(t, err)
@@ -47,12 +47,12 @@ func TestUserCreate(t *testing.T) {
 	tests := []struct {
 		name       string
 		body       string
-		setup      func(*mocks.MockUserRepository)
+		setup      func(*usermocks.MockUserRepository)
 		wantStatus int
 	}{
 		{
 			name: "ok", body: `{"email":"a@b.c","password":"secret"}`,
-			setup: func(m *mocks.MockUserRepository) {
+			setup: func(m *usermocks.MockUserRepository) {
 				m.EXPECT().Create(gomock.Any(), gomock.Any()).
 					DoAndReturn(func(_ context.Context, u *user.User) (*user.User, error) {
 						u.ID = uuid.New()
@@ -68,14 +68,14 @@ func TestUserCreate(t *testing.T) {
 		{name: "empty password", body: `{"email":"a@b.c","password":""}`, wantStatus: http.StatusBadRequest},
 		{
 			name: "duplicate email", body: `{"email":"a@b.c","password":"secret"}`,
-			setup: func(m *mocks.MockUserRepository) {
+			setup: func(m *usermocks.MockUserRepository) {
 				m.EXPECT().Create(gomock.Any(), gomock.Any()).Return(nil, user.ErrDuplicateEmail)
 			},
 			wantStatus: http.StatusConflict,
 		},
 		{
 			name: "repo error", body: `{"email":"a@b.c","password":"secret"}`,
-			setup: func(m *mocks.MockUserRepository) {
+			setup: func(m *usermocks.MockUserRepository) {
 				m.EXPECT().Create(gomock.Any(), gomock.Any()).Return(nil, errors.New("boom"))
 			},
 			wantStatus: http.StatusInternalServerError,
@@ -105,12 +105,12 @@ func TestUserLogin(t *testing.T) {
 	tests := []struct {
 		name       string
 		body       string
-		setup      func(*mocks.MockUserRepository)
+		setup      func(*usermocks.MockUserRepository)
 		wantStatus int
 	}{
 		{
 			name: "ok", body: `{"email":"a@b.c","password":"secret"}`,
-			setup: func(m *mocks.MockUserRepository) {
+			setup: func(m *usermocks.MockUserRepository) {
 				m.EXPECT().FindByEmail(gomock.Any(), "a@b.c").Return(userWithHash, nil)
 			},
 			wantStatus: http.StatusOK,
@@ -120,21 +120,21 @@ func TestUserLogin(t *testing.T) {
 		{name: "empty password", body: `{"email":"a@b.c","password":""}`, wantStatus: http.StatusBadRequest},
 		{
 			name: "wrong password", body: `{"email":"a@b.c","password":"wrong"}`,
-			setup: func(m *mocks.MockUserRepository) {
+			setup: func(m *usermocks.MockUserRepository) {
 				m.EXPECT().FindByEmail(gomock.Any(), "a@b.c").Return(userWithHash, nil)
 			},
 			wantStatus: http.StatusUnauthorized,
 		},
 		{
 			name: "user not found", body: `{"email":"a@b.c","password":"secret"}`,
-			setup: func(m *mocks.MockUserRepository) {
+			setup: func(m *usermocks.MockUserRepository) {
 				m.EXPECT().FindByEmail(gomock.Any(), "a@b.c").Return(nil, user.ErrNotFound)
 			},
 			wantStatus: http.StatusUnauthorized,
 		},
 		{
 			name: "repo error", body: `{"email":"a@b.c","password":"secret"}`,
-			setup: func(m *mocks.MockUserRepository) {
+			setup: func(m *usermocks.MockUserRepository) {
 				m.EXPECT().FindByEmail(gomock.Any(), "a@b.c").Return(nil, errors.New("boom"))
 			},
 			wantStatus: http.StatusInternalServerError,
@@ -159,12 +159,12 @@ func TestUserGetByID(t *testing.T) {
 	tests := []struct {
 		name       string
 		pathID     string
-		setup      func(*mocks.MockUserRepository)
+		setup      func(*usermocks.MockUserRepository)
 		wantStatus int
 	}{
 		{
 			name: "ok", pathID: userID.String(),
-			setup: func(m *mocks.MockUserRepository) {
+			setup: func(m *usermocks.MockUserRepository) {
 				m.EXPECT().FindByID(gomock.Any(), userID).
 					Return(&user.User{ID: userID, Email: "a@b.c"}, nil)
 			},
@@ -173,14 +173,14 @@ func TestUserGetByID(t *testing.T) {
 		{name: "bad id", pathID: "not-a-uuid", wantStatus: http.StatusBadRequest},
 		{
 			name: "not found", pathID: userID.String(),
-			setup: func(m *mocks.MockUserRepository) {
+			setup: func(m *usermocks.MockUserRepository) {
 				m.EXPECT().FindByID(gomock.Any(), userID).Return(nil, user.ErrNotFound)
 			},
 			wantStatus: http.StatusNotFound,
 		},
 		{
 			name: "repo error", pathID: userID.String(),
-			setup: func(m *mocks.MockUserRepository) {
+			setup: func(m *usermocks.MockUserRepository) {
 				m.EXPECT().FindByID(gomock.Any(), userID).Return(nil, errors.New("boom"))
 			},
 			wantStatus: http.StatusInternalServerError,

@@ -1,4 +1,4 @@
-package userrepository
+package userservice
 
 import (
 	"context"
@@ -7,7 +7,7 @@ import (
 	"github.com/google/uuid"
 )
 
-//go:generate mockgen -destination=mocks/mock_user_repository.go -package=mocks github.com/al-tokarev/gophkeeper/internal/modules/user/repository UserRepository
+//go:generate mockgen -destination=mocks/mock_user_repository.go -package=mocks github.com/al-tokarev/gophkeeper/internal/modules/user/service UserRepository
 
 type UserRepository interface {
 	Create(ctx context.Context, u *user.User) (*user.User, error)

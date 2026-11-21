@@ -4,10 +4,13 @@ package client
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 )
 
 // Client — HTTP-клиент для API сервера GophKeeper.
@@ -18,11 +21,44 @@ type Client struct {
 }
 
 // New создаёт Client, указывающий на baseURL.
-func New(baseURL string) *Client {
-	return &Client{
-		baseURL: baseURL,
-		http:    http.DefaultClient,
+func New(baseURL string) (*Client, error) {
+	httpClient := &http.Client{}
+
+	caPath := os.Getenv("GOPHKEEPER_CA_CERT")
+	explicit := caPath != ""
+	if caPath == "" {
+		for _, p := range []string{"./ca.crt", "./certs/ca.crt"} {
+			if _, err := os.Stat(p); err == nil {
+				caPath = p
+				break
+			}
+		}
 	}
+
+	if caPath == "" {
+		return &Client{baseURL: baseURL, http: httpClient}, nil
+	}
+
+	caCert, err := os.ReadFile(caPath)
+	if err != nil {
+		if explicit {
+			return nil, fmt.Errorf("read CA cert %s: %w", caPath, err)
+		}
+		return &Client{baseURL: baseURL, http: httpClient}, nil
+	}
+
+	pool, _ := x509.SystemCertPool()
+	if pool == nil {
+		pool = x509.NewCertPool()
+	}
+	if !pool.AppendCertsFromPEM(caCert) {
+		return nil, fmt.Errorf("parse CA cert %s: invalid PEM", caPath)
+	}
+	httpClient.Transport = &http.Transport{
+		TLSClientConfig: &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12},
+	}
+
+	return &Client{baseURL: baseURL, http: httpClient}, nil
 }
 
 // SetToken устанавливает bearer-токен для авторизованных запросов.
@@ -63,7 +99,7 @@ func (c *Client) do(ctx context.Context, method, path string, body any, auth boo
 
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("client: do: %w", err)
+		return nil, fmt.Errorf("%w: %v", ErrNetwork, err)
 	}
 	defer resp.Body.Close()
 

@@ -12,16 +12,20 @@ import (
 )
 
 // serverURL возвращает адрес сервера из переменной окружения GOPHKEEPER_SERVER,
-// либо http://localhost:8080 по умолчанию.
+// либо https://localhost:8080 по умолчанию.
 func serverURL() string {
 	if s := os.Getenv("GOPHKEEPER_SERVER"); s != "" {
 		return strings.TrimRight(s, "/")
 	}
-	return "http://localhost:8080"
+	return "https://localhost:8080"
 }
 
 func main() {
-	c := client.New(serverURL())
+	c, err := client.New(serverURL())
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "error:", err)
+		os.Exit(1)
+	}
 	c.SetToken(cli.LoadToken())
 
 	app := cli.New(os.Stdout, os.Stderr, c)

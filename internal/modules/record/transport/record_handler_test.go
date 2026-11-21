@@ -13,8 +13,8 @@ import (
 	"github.com/al-tokarev/gophkeeper/internal/auth"
 	"github.com/al-tokarev/gophkeeper/internal/cryptoutil"
 	"github.com/al-tokarev/gophkeeper/internal/modules/record"
-	"github.com/al-tokarev/gophkeeper/internal/modules/record/repository/mocks"
 	recordservice "github.com/al-tokarev/gophkeeper/internal/modules/record/service"
+	recordmocks "github.com/al-tokarev/gophkeeper/internal/modules/record/service/mocks"
 	"github.com/al-tokarev/gophkeeper/internal/validation"
 	"github.com/go-chi/chi"
 	"github.com/google/uuid"
@@ -23,10 +23,10 @@ import (
 	"go.uber.org/zap"
 )
 
-func newHandler(t *testing.T) (*RecordHandler, *mocks.MockRecordRepository, *cryptoutil.Cipher) {
+func newHandler(t *testing.T) (*RecordHandler, *recordmocks.MockRecordRepository, *cryptoutil.Cipher) {
 	t.Helper()
 	ctrl := gomock.NewController(t)
-	mockRepo := mocks.NewMockRecordRepository(ctrl)
+	mockRepo := recordmocks.NewMockRecordRepository(ctrl)
 	ciph, err := cryptoutil.NewCipher([]byte("0123456789abcdef0123456789abcdef"))
 	require.NoError(t, err)
 	svc := recordservice.NewService(mockRepo, ciph, validation.New(), zap.NewNop().Sugar())
@@ -50,7 +50,9 @@ func encrypted(t *testing.T, c *cryptoutil.Cipher, plaintext string) json.RawMes
 	t.Helper()
 	enc, err := c.Encrypt([]byte(plaintext))
 	require.NoError(t, err)
-	return json.RawMessage(`"` + enc + `"`)
+	b, err := json.Marshal(enc)
+	require.NoError(t, err)
+	return b
 }
 
 func TestCreate(t *testing.T) {
@@ -61,12 +63,12 @@ func TestCreate(t *testing.T) {
 		name       string
 		body       string
 		userID     uuid.UUID
-		setup      func(*mocks.MockRecordRepository, *cryptoutil.Cipher)
+		setup      func(*recordmocks.MockRecordRepository, *cryptoutil.Cipher)
 		wantStatus int
 	}{
 		{
 			name: "ok", body: validBody, userID: userID,
-			setup: func(m *mocks.MockRecordRepository, _ *cryptoutil.Cipher) {
+			setup: func(m *recordmocks.MockRecordRepository, _ *cryptoutil.Cipher) {
 				m.EXPECT().Create(gomock.Any(), gomock.Any()).
 					DoAndReturn(func(_ context.Context, rec *record.Record) (*record.Record, error) {
 						rec.ID = uuid.New()
@@ -85,7 +87,7 @@ func TestCreate(t *testing.T) {
 		},
 		{
 			name: "repo error", body: validBody, userID: userID,
-			setup: func(m *mocks.MockRecordRepository, _ *cryptoutil.Cipher) {
+			setup: func(m *recordmocks.MockRecordRepository, _ *cryptoutil.Cipher) {
 				m.EXPECT().Create(gomock.Any(), gomock.Any()).Return(nil, errors.New("boom"))
 			},
 			wantStatus: http.StatusInternalServerError,
@@ -112,12 +114,12 @@ func TestGet(t *testing.T) {
 		name       string
 		pathID     string
 		userID     uuid.UUID
-		setup      func(*mocks.MockRecordRepository, *cryptoutil.Cipher)
+		setup      func(*recordmocks.MockRecordRepository, *cryptoutil.Cipher)
 		wantStatus int
 	}{
 		{
 			name: "ok", pathID: recordID.String(), userID: userID,
-			setup: func(m *mocks.MockRecordRepository, c *cryptoutil.Cipher) {
+			setup: func(m *recordmocks.MockRecordRepository, c *cryptoutil.Cipher) {
 				m.EXPECT().FindByID(gomock.Any(), gomock.Any(), gomock.Any()).
 					Return(&record.Record{
 						ID: recordID, UserID: userID, Type: record.TypeLogin,
@@ -131,7 +133,7 @@ func TestGet(t *testing.T) {
 		{name: "no user", pathID: recordID.String(), userID: uuid.Nil, wantStatus: http.StatusUnauthorized},
 		{
 			name: "not found", pathID: recordID.String(), userID: userID,
-			setup: func(m *mocks.MockRecordRepository, _ *cryptoutil.Cipher) {
+			setup: func(m *recordmocks.MockRecordRepository, _ *cryptoutil.Cipher) {
 				m.EXPECT().FindByID(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, record.ErrNotFound)
 			},
 			wantStatus: http.StatusNotFound,
@@ -156,13 +158,13 @@ func TestList(t *testing.T) {
 	tests := []struct {
 		name       string
 		userID     uuid.UUID
-		setup      func(*mocks.MockRecordRepository, *cryptoutil.Cipher)
+		setup      func(*recordmocks.MockRecordRepository, *cryptoutil.Cipher)
 		wantStatus int
 	}{
 		{
 			name: "ok", userID: userID,
-			setup: func(m *mocks.MockRecordRepository, _ *cryptoutil.Cipher) {
-				m.EXPECT().FindAll(gomock.Any(), gomock.Any()).
+			setup: func(m *recordmocks.MockRecordRepository, _ *cryptoutil.Cipher) {
+				m.EXPECT().FindAll(gomock.Any(), gomock.Any(), gomock.Any()).
 					Return([]record.Record{{ID: uuid.New(), Name: "gmail"}}, nil)
 			},
 			wantStatus: http.StatusOK,
@@ -170,8 +172,8 @@ func TestList(t *testing.T) {
 		{name: "no user", userID: uuid.Nil, wantStatus: http.StatusUnauthorized},
 		{
 			name: "repo error", userID: userID,
-			setup: func(m *mocks.MockRecordRepository, _ *cryptoutil.Cipher) {
-				m.EXPECT().FindAll(gomock.Any(), gomock.Any()).Return(nil, errors.New("boom"))
+			setup: func(m *recordmocks.MockRecordRepository, _ *cryptoutil.Cipher) {
+				m.EXPECT().FindAll(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, errors.New("boom"))
 			},
 			wantStatus: http.StatusInternalServerError,
 		},
@@ -199,12 +201,12 @@ func TestUpdate(t *testing.T) {
 		pathID     string
 		body       string
 		userID     uuid.UUID
-		setup      func(*mocks.MockRecordRepository, *cryptoutil.Cipher)
+		setup      func(*recordmocks.MockRecordRepository, *cryptoutil.Cipher)
 		wantStatus int
 	}{
 		{
 			name: "ok", pathID: recordID.String(), body: validBody, userID: userID,
-			setup: func(m *mocks.MockRecordRepository, c *cryptoutil.Cipher) {
+			setup: func(m *recordmocks.MockRecordRepository, c *cryptoutil.Cipher) {
 				m.EXPECT().FindByID(gomock.Any(), gomock.Any(), gomock.Any()).
 					Return(&record.Record{ID: recordID, Type: record.TypeLogin, Data: encrypted(t, c, `{}`)}, nil)
 				m.EXPECT().Update(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
@@ -220,14 +222,14 @@ func TestUpdate(t *testing.T) {
 		{name: "no user", pathID: recordID.String(), body: validBody, userID: uuid.Nil, wantStatus: http.StatusUnauthorized},
 		{
 			name: "not found", pathID: recordID.String(), body: validBody, userID: userID,
-			setup: func(m *mocks.MockRecordRepository, _ *cryptoutil.Cipher) {
+			setup: func(m *recordmocks.MockRecordRepository, _ *cryptoutil.Cipher) {
 				m.EXPECT().FindByID(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, record.ErrNotFound)
 			},
 			wantStatus: http.StatusNotFound,
 		},
 		{
 			name: "invalid data", pathID: recordID.String(), body: `{"name":"x","data":{"login":""}}`, userID: userID,
-			setup: func(m *mocks.MockRecordRepository, c *cryptoutil.Cipher) {
+			setup: func(m *recordmocks.MockRecordRepository, c *cryptoutil.Cipher) {
 				m.EXPECT().FindByID(gomock.Any(), gomock.Any(), gomock.Any()).
 					Return(&record.Record{ID: recordID, Type: record.TypeLogin, Data: encrypted(t, c, `{}`)}, nil)
 			},
@@ -255,12 +257,12 @@ func TestDelete(t *testing.T) {
 		name       string
 		pathID     string
 		userID     uuid.UUID
-		setup      func(*mocks.MockRecordRepository, *cryptoutil.Cipher)
+		setup      func(*recordmocks.MockRecordRepository, *cryptoutil.Cipher)
 		wantStatus int
 	}{
 		{
 			name: "ok", pathID: recordID.String(), userID: userID,
-			setup: func(m *mocks.MockRecordRepository, _ *cryptoutil.Cipher) {
+			setup: func(m *recordmocks.MockRecordRepository, _ *cryptoutil.Cipher) {
 				now := time.Now()
 				m.EXPECT().MarkDelete(gomock.Any(), gomock.Any(), gomock.Any()).
 					Return(&record.Record{ID: recordID, Name: "gmail", DeletedAt: &now}, nil)
@@ -271,7 +273,7 @@ func TestDelete(t *testing.T) {
 		{name: "no user", pathID: recordID.String(), userID: uuid.Nil, wantStatus: http.StatusUnauthorized},
 		{
 			name: "not found", pathID: recordID.String(), userID: userID,
-			setup: func(m *mocks.MockRecordRepository, _ *cryptoutil.Cipher) {
+			setup: func(m *recordmocks.MockRecordRepository, _ *cryptoutil.Cipher) {
 				m.EXPECT().MarkDelete(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, record.ErrNotFound)
 			},
 			wantStatus: http.StatusNotFound,

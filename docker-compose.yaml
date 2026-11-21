@@ -26,6 +26,10 @@ services:
       SECRET_KEY: "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
       JWT_SECRET: "0123456789abcdef0123456789abcdef"
       JWT_EXPIRY: "24h"
+      TLS_CERT_FILE: /certs/server.crt
+      TLS_KEY_FILE: /certs/server.key
+    volumes:
+      - certs:/certs
     ports:
       - "8080:8080"
     depends_on:
@@ -35,3 +39,4 @@ services:
 
 volumes:
   pgdata:
+  certs:

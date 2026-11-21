@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"time"
@@ -11,15 +12,32 @@ import (
 )
 
 // runList выполняет команду list.
-func (a *App) runList(ctx context.Context) error {
+func (a *App) runList(ctx context.Context, args []string) error {
 	if a.Client.Token() == "" {
 		return fmt.Errorf("not logged in")
 	}
 
-	recs, err := a.Client.ListRecords(ctx)
-	if err != nil {
+	fs := flag.NewFlagSet("list", flag.ContinueOnError)
+	search := fs.String("search", "", "metadata search")
+	if err := fs.Parse(args); err != nil {
 		return err
 	}
+
+	recs, err := a.Client.ListRecords(ctx, *search)
+	if err != nil {
+		if errors.Is(err, client.ErrNetwork) {
+			recs = a.Cache.List()
+			if len(recs) == 0 {
+				return fmt.Errorf("server unavailable and no cached data")
+			}
+			fmt.Fprintln(a.Err, "warning: server unavailable, showing cached data")
+		} else {
+			return err
+		}
+	} else {
+		a.Cache.PutAll(recs)
+	}
+
 	if len(recs) == 0 {
 		fmt.Fprintln(a.Out, "no records")
 		return nil
@@ -49,8 +67,20 @@ func (a *App) runGet(ctx context.Context, args []string) error {
 
 	rec, err := a.Client.GetRecord(ctx, *id)
 	if err != nil {
-		return err
+		if errors.Is(err, client.ErrNetwork) {
+			cached, ok := a.Cache.Get(*id)
+			if !ok {
+				return fmt.Errorf("server unavailable and record not in cache")
+			}
+			fmt.Fprintln(a.Err, "warning: server unavailable, showing cached data")
+			rec = &cached
+		} else {
+			return err
+		}
+	} else {
+		a.Cache.Put(*rec)
 	}
+
 	fmt.Fprintf(a.Out, "id:         %s\n", rec.ID)
 	fmt.Fprintf(a.Out, "type:       %s\n", rec.Type)
 	fmt.Fprintf(a.Out, "name:       %s\n", rec.Name)
@@ -68,29 +98,57 @@ func (a *App) runAdd(ctx context.Context, args []string) error {
 	typ := fs.String("type", "", "record type: login|text|binary|card")
 	name := fs.String("name", "", "record name")
 	data := fs.String("data", "", "JSON payload")
+	file := fs.String("file", "", "file to upload (for --type=binary)")
 	meta := fs.String("metadata", "", "metadata")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	if *typ == "" || *name == "" || *data == "" {
-		return fmt.Errorf("add: --type, --name, --data are required")
-	}
-	if !json.Valid([]byte(*data)) {
-		return fmt.Errorf("add: --data must be valid JSON")
+	if *typ == "" || *name == "" {
+		return fmt.Errorf("add: --type and --name are required")
 	}
 	if a.Client.Token() == "" {
 		return fmt.Errorf("not logged in")
 	}
 
+	var payload json.RawMessage
+
+	switch {
+	case *file != "":
+		if *typ != "binary" {
+			return fmt.Errorf("add: --file is only supported for --type=binary")
+		}
+		if *data != "" {
+			return fmt.Errorf("add: --file and --data are mutually exclusive")
+		}
+		blob, err := readFileAsBase64(*file)
+		if err != nil {
+			return fmt.Errorf("add: %w", err)
+		}
+		payload, err = json.Marshal(map[string]string{"blob": blob})
+		if err != nil {
+			return fmt.Errorf("add: marshal: %w", err)
+		}
+
+	case *data != "":
+		if !json.Valid([]byte(*data)) {
+			return fmt.Errorf("add: --data must be valid JSON")
+		}
+		payload = json.RawMessage(*data)
+
+	default:
+		return fmt.Errorf("add: --data or --file is required")
+	}
+
 	rec, err := a.Client.CreateRecord(ctx, client.Record{
 		Type:     *typ,
 		Name:     *name,
-		Data:     json.RawMessage(*data),
+		Data:     payload,
 		MetaData: *meta,
 	})
 	if err != nil {
 		return err
 	}
+	a.Cache.Put(*rec)
 	fmt.Fprintf(a.Out, "created: %s (%s, %s)\n", rec.ID, rec.Type, rec.Name)
 	return nil
 }
@@ -124,6 +182,7 @@ func (a *App) runUpdate(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
+	a.Cache.Put(*rec)
 	fmt.Fprintf(a.Out, "updated: %s (%s, %s)\n", rec.ID, rec.Name, rec.UpdatedAt.Format(time.RFC3339))
 	return nil
 }
@@ -147,6 +206,7 @@ func (a *App) runDelete(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
+	a.Cache.Remove(*id)
 	if rec.DeletedAt != nil {
 		fmt.Fprintf(a.Out, "deleted: %s (%s, %s)\n", rec.ID, rec.Name, rec.DeletedAt.Format(time.RFC3339))
 	} else {

@@ -13,6 +13,9 @@
 
 #config
 config.json
+.env
+.env.local
+.env.*.local
 
 # Binaries
 gophkeeper
@@ -34,3 +37,6 @@ storage.txt
 
 #keys
 *.pem
+server.crt
+server.key
+certs/

@@ -16,6 +16,7 @@ type updateRequest struct {
 	Name     string          `json:"name"`
 	Data     json.RawMessage `json:"data"`
 	MetaData string          `json:"metadata"`
+	Version  int             `json:"version"`
 }
 
 func (h *RecordHandler) Update(w http.ResponseWriter, r *http.Request) {
@@ -30,7 +31,6 @@ func (h *RecordHandler) Update(w http.ResponseWriter, r *http.Request) {
 
 	var request updateRequest
 	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-		h.logger.Warnw("Decode failed", "error", err.Error())
 		transport.RespondError(w, http.StatusBadRequest, "DECODE_ERROR", err.Error())
 		return
 	}
@@ -46,13 +46,16 @@ func (h *RecordHandler) Update(w http.ResponseWriter, r *http.Request) {
 		Name:     request.Name,
 		Data:     request.Data,
 		MetaData: request.MetaData,
+		Version:  request.Version,
 	}
 
 	updatedRec, err := h.service.Update(r.Context(), id, &rec, userID)
 	if err != nil {
 		switch {
 		case errors.Is(err, record.ErrNotFound):
-			transport.RespondError(w, http.StatusNotFound, "NOT_FOUND", "record not found")
+			transport.RespondError(w, http.StatusNotFound, "NOT_FOUND", err.Error())
+		case errors.Is(err, record.ErrConflict):
+			transport.RespondError(w, http.StatusConflict, "CONFLICT", err.Error())
 		case errors.Is(err, record.ErrInvalidData):
 			transport.RespondError(w, http.StatusBadRequest, "INVALID", err.Error())
 		default:

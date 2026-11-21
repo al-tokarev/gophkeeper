@@ -42,6 +42,7 @@ func (h *UserHandler) Create(w http.ResponseWriter, r *http.Request) {
 	passwordHash, err := auth.GetPasswordHash(request.Password)
 	if err != nil {
 		transport.RespondError(w, http.StatusBadRequest, "GEN_PASSWORD_ERROR", err.Error())
+		return
 	}
 
 	u := user.User{

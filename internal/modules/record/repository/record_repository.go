@@ -8,31 +8,27 @@ import (
 
 	"github.com/al-tokarev/gophkeeper/internal/modules/record"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"go.uber.org/zap"
 )
 
-type recordRepository struct {
-	db     *sql.DB
+type RecordRepository struct {
+	db     *pgxpool.Pool
 	logger *zap.SugaredLogger
 }
 
-func NewRepository(db *sql.DB, logger *zap.SugaredLogger) RecordRepository {
-	return &recordRepository{
+func NewRepository(db *pgxpool.Pool, logger *zap.SugaredLogger) *RecordRepository {
+	return &RecordRepository{
 		db:     db,
 		logger: logger.With(zap.String("component", "record repository")),
 	}
 }
 
-func (r *recordRepository) Create(ctx context.Context, rec *record.Record) (*record.Record, error) {
+func (r *RecordRepository) Create(ctx context.Context, rec *record.Record) (*record.Record, error) {
 	r.logger.Infow("start create record")
 
-	stmt, err := r.db.PrepareContext(ctx, "INSERT INTO records (user_id, name, type, data, metadata) VALUES ($1,$2,$3,$4,$5) RETURNING id, created_at, updated_at, deleted_at")
-	if err != nil {
-		return nil, err
-	}
-	defer stmt.Close()
-
-	err = stmt.QueryRowContext(ctx, rec.UserID, rec.Name, rec.Type, rec.Data, rec.MetaData).Scan(&rec.ID, &rec.CreatedAt, &rec.UpdatedAt, &rec.DeletedAt)
+	query := "INSERT INTO records (user_id, name, type, data, metadata) VALUES ($1,$2,$3,$4,$5) RETURNING id, created_at, updated_at, deleted_at"
+	err := r.db.QueryRow(ctx, query, rec.UserID, rec.Name, rec.Type, rec.Data, rec.MetaData).Scan(&rec.ID, &rec.CreatedAt, &rec.UpdatedAt, &rec.DeletedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -40,22 +36,17 @@ func (r *recordRepository) Create(ctx context.Context, rec *record.Record) (*rec
 	return rec, nil
 }
 
-func (r *recordRepository) FindByID(ctx context.Context, id uuid.UUID, userID uuid.UUID) (*record.Record, error) {
+func (r *RecordRepository) FindByID(ctx context.Context, id uuid.UUID, userID uuid.UUID) (*record.Record, error) {
 	r.logger.Infow("start find record")
 
-	stmt, err := r.db.PrepareContext(ctx, "SELECT name, type, data, metadata, created_at, updated_at, deleted_at FROM records WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL")
-	if err != nil {
-		return nil, err
-	}
-	defer stmt.Close()
-
-	row := stmt.QueryRowContext(ctx, id, userID)
+	query := "SELECT name, type, data, metadata, created_at, updated_at, deleted_at FROM records WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL"
+	row := r.db.QueryRow(ctx, query, id, userID)
 
 	rec := record.Record{
 		ID:     id,
 		UserID: userID,
 	}
-	err = row.Scan(&rec.Name, &rec.Type, &rec.Data, &rec.MetaData, &rec.CreatedAt, &rec.UpdatedAt, &rec.DeletedAt)
+	err := row.Scan(&rec.Name, &rec.Type, &rec.Data, &rec.MetaData, &rec.CreatedAt, &rec.UpdatedAt, &rec.DeletedAt)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, record.ErrNotFound
@@ -66,16 +57,11 @@ func (r *recordRepository) FindByID(ctx context.Context, id uuid.UUID, userID uu
 	return &rec, nil
 }
 
-func (r *recordRepository) FindAll(ctx context.Context, userID uuid.UUID) ([]record.Record, error) {
+func (r *RecordRepository) FindAll(ctx context.Context, userID uuid.UUID, searchFilter string) ([]record.Record, error) {
 	r.logger.Infow("start find records", "user_id", userID)
 
-	stmt, err := r.db.PrepareContext(ctx, "SELECT id, type, name, metadata, created_at, updated_at FROM records WHERE user_id = $1 AND deleted_at IS NULL")
-	if err != nil {
-		return nil, fmt.Errorf("by prepare: %w", err)
-	}
-	defer stmt.Close()
-
-	rows, err := stmt.QueryContext(ctx, userID)
+	query := "SELECT id, type, name, metadata, created_at, updated_at FROM records WHERE user_id = $1 AND deleted_at IS NULL AND ($2 = '' OR metadata ILIKE '%' || $2 || '%')"
+	rows, err := r.db.Query(ctx, query, userID, searchFilter)
 	if err != nil {
 		return nil, fmt.Errorf("by query: %w", err)
 	}
@@ -99,24 +85,24 @@ func (r *recordRepository) FindAll(ctx context.Context, userID uuid.UUID) ([]rec
 	return result, nil
 }
 
-func (r *recordRepository) Update(ctx context.Context, id uuid.UUID, rec *record.Record, userID uuid.UUID) (*record.Record, error) {
+func (r *RecordRepository) Update(ctx context.Context, id uuid.UUID, rec *record.Record, userID uuid.UUID) (*record.Record, error) {
 	r.logger.Infow("start record update")
 
 	query := `
 		UPDATE records
 		SET name = $1, data = $2, metadata = $3, updated_at = now()
-		WHERE id = $4 AND user_id = $5 AND deleted_at IS NULL
-		RETURNING id, user_id, type, name, data, metadata, created_at, updated_at, deleted_at
+		WHERE id = $4 AND user_id = $5 AND version = $6 AND deleted_at IS NULL
+		RETURNING id, user_id, type, name, data, metadata, version, created_at, updated_at, deleted_at
 	`
 
 	var out record.Record
-	err := r.db.QueryRowContext(ctx, query, rec.Name, rec.Data, rec.MetaData, id, userID).Scan(
+	err := r.db.QueryRow(ctx, query, rec.Name, rec.Data, rec.MetaData, id, userID, rec.Version).Scan(
 		&out.ID, &out.UserID, &out.Type, &out.Name,
-		&out.Data, &out.MetaData, &out.CreatedAt, &out.UpdatedAt, &out.DeletedAt,
+		&out.Data, &out.MetaData, &out.Version, &out.CreatedAt, &out.UpdatedAt, &out.DeletedAt,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return nil, record.ErrNotFound
+			return nil, record.ErrConflict
 		}
 		return nil, fmt.Errorf("update record: %w", err)
 	}
@@ -124,7 +110,7 @@ func (r *recordRepository) Update(ctx context.Context, id uuid.UUID, rec *record
 	return &out, nil
 }
 
-func (r *recordRepository) MarkDelete(ctx context.Context, id uuid.UUID, userID uuid.UUID) (*record.Record, error) {
+func (r *RecordRepository) MarkDelete(ctx context.Context, id uuid.UUID, userID uuid.UUID) (*record.Record, error) {
 	r.logger.Infow("start record mark delete")
 
 	query := `
@@ -135,7 +121,7 @@ func (r *recordRepository) MarkDelete(ctx context.Context, id uuid.UUID, userID 
 	`
 
 	var out record.Record
-	err := r.db.QueryRowContext(ctx, query, id, userID).Scan(
+	err := r.db.QueryRow(ctx, query, id, userID).Scan(
 		&out.ID, &out.Name, &out.MetaData, &out.CreatedAt, &out.UpdatedAt, &out.DeletedAt,
 	)
 

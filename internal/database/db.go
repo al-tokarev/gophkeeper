@@ -2,32 +2,34 @@ package database
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
 // NewPool возвращает пул соединений для PostgreSQL
-func NewPool(dsn string) (*sql.DB, error) {
-	db, err := sql.Open("pgx", dsn)
+func NewPool(dsn string) (*pgxpool.Pool, error) {
+	cfg, err := pgxpool.ParseConfig(dsn)
 	if err != nil {
-		return nil, fmt.Errorf("open db: %w", err)
+		return nil, fmt.Errorf("config pgxpool: %w", err)
 	}
 
-	db.SetMaxOpenConns(10)
-	db.SetMaxIdleConns(5)
-	db.SetConnMaxLifetime(time.Hour)
-	db.SetConnMaxIdleTime(10 * time.Minute)
+	cfg.MaxConns = 10
+	cfg.MaxConnIdleTime = 5
+	cfg.MaxConnLifetime = time.Hour
 
-	dbCtx, dbCtxCancel := context.WithTimeout(context.Background(), time.Second*5)
-	defer dbCtxCancel()
+	ctx := context.Background()
 
-	if err = db.PingContext(dbCtx); err != nil {
-		_ = db.Close()
+	pool, err := pgxpool.NewWithConfig(ctx, cfg)
+	if err != nil {
+		return nil, fmt.Errorf("pool pgxpool: %w", err)
+	}
+	if err := pool.Ping(ctx); err != nil {
+		pool.Close()
 		return nil, fmt.Errorf("ping db: %w", err)
 	}
 
-	return db, nil
+	return pool, nil
 }

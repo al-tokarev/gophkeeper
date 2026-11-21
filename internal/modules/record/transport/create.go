@@ -28,7 +28,6 @@ type createResponse struct {
 func (h *RecordHandler) Create(w http.ResponseWriter, r *http.Request) {
 	var request createRequest
 	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-		h.logger.Warnw("Decode failed", "error", err.Error())
 		transport.RespondError(w, http.StatusBadRequest, "DECODE_ERROR", err.Error())
 		return
 	}
