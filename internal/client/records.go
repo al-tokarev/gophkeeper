@@ -15,6 +15,7 @@ type Record struct {
 	Name      string          `json:"name"`
 	Data      json.RawMessage `json:"data"`
 	MetaData  string          `json:"metadata"`
+	Version   int             `json:"version"`
 	CreatedAt time.Time       `json:"created_at"`
 	UpdatedAt time.Time       `json:"updated_at"`
 	DeletedAt *time.Time      `json:"deleted_at"`

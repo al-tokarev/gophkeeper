@@ -161,11 +161,12 @@ func (a *App) runUpdate(ctx context.Context, args []string) error {
 	name := fs.String("name", "", "record name")
 	data := fs.String("data", "", "JSON payload")
 	meta := fs.String("metadata", "", "metadata")
+	version := fs.Int("version", 0, "version")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	if *id == "" || *name == "" || *data == "" || *meta == "" {
-		return fmt.Errorf("update: --id, --name, --data, --metadata are required")
+	if *id == "" || *name == "" || *data == "" || *meta == "" || *version == 0 {
+		return fmt.Errorf("update: --id, --name, --data, --metadata, --version are required")
 	}
 	if !json.Valid([]byte(*data)) {
 		return fmt.Errorf("update: --data must be valid JSON")
@@ -178,12 +179,13 @@ func (a *App) runUpdate(ctx context.Context, args []string) error {
 		Name:     *name,
 		Data:     json.RawMessage(*data),
 		MetaData: *meta,
+		Version:  *version,
 	})
 	if err != nil {
 		return err
 	}
 	a.Cache.Put(*rec)
-	fmt.Fprintf(a.Out, "updated: %s (%s, %s)\n", rec.ID, rec.Name, rec.UpdatedAt.Format(time.RFC3339))
+	fmt.Fprintf(a.Out, "updated: %s (%s, %s), version: %d\n", rec.ID, rec.Name, rec.UpdatedAt.Format(time.RFC3339), rec.Version)
 	return nil
 }
 

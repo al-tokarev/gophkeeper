@@ -2,13 +2,13 @@ package userrepository
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 
 	"github.com/al-tokarev/gophkeeper/internal/modules/user"
 	"github.com/google/uuid"
 	"github.com/jackc/pgerrcode"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.uber.org/zap"
@@ -52,7 +52,7 @@ func (r *UserRepository) FindByID(ctx context.Context, id uuid.UUID) (*user.User
 	var u user.User
 	err := row.Scan(&u.ID, &u.Email, &u.CreatedAt, &u.UpdatedAt)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, user.ErrNotFound
 		}
 		return nil, err
@@ -70,7 +70,7 @@ func (r *UserRepository) FindByEmail(ctx context.Context, email string) (*user.U
 	var u user.User
 	err := row.Scan(&u.ID, &u.Email, &u.PasswordHash)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, user.ErrNotFound
 		}
 		return nil, fmt.Errorf("error by row scan: %w", err)

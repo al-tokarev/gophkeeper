@@ -54,6 +54,23 @@ go build -o gophkeeper ./cmd/cli
 GOPHKEEPER_SERVER=https://127.0.0.1:9090 ./gophkeeper list
 ```
 
+## Версия и дата сборки
+
+Клиент поддерживает вывод версии и даты сборки:
+
+```bash
+./gophkeeper --version
+# gophkeeper 1.0.0 (built 2026-11-27T12:00:00Z)
+```
+
+Сборка с версионированием:
+```bash
+go build -ldflags "\
+  -X main.buildVersion=1.0.0 \
+  -X main.buildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  -o gophkeeper ./cmd/cli
+```
+
 ## Проверка
 
 Регистрация:
@@ -116,7 +133,7 @@ curl -i https://localhost:8080/records -H "Authorization: Bearer <token>"
 
 # обновить
 ./gophkeeper update --id=<id> --name=gmail \
-  --data='{"login":"a","password":"NEW"}' --metadata=mail
+  --data='{"login":"a","password":"NEW"}' --metadata=mail --version=1
 
 # удалить
 ./gophkeeper delete --id=<id>

@@ -2,12 +2,12 @@ package recordrepository
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 
 	"github.com/al-tokarev/gophkeeper/internal/modules/record"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.uber.org/zap"
 )
@@ -48,7 +48,7 @@ func (r *RecordRepository) FindByID(ctx context.Context, id uuid.UUID, userID uu
 	}
 	err := row.Scan(&rec.Name, &rec.Type, &rec.Data, &rec.MetaData, &rec.CreatedAt, &rec.UpdatedAt, &rec.DeletedAt)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, record.ErrNotFound
 		}
 		return nil, fmt.Errorf("error by row scan: %w", err)
@@ -90,7 +90,7 @@ func (r *RecordRepository) Update(ctx context.Context, id uuid.UUID, rec *record
 
 	query := `
 		UPDATE records
-		SET name = $1, data = $2, metadata = $3, updated_at = now()
+		SET name = $1, data = $2, metadata = $3, version = version + 1, updated_at = now()
 		WHERE id = $4 AND user_id = $5 AND version = $6 AND deleted_at IS NULL
 		RETURNING id, user_id, type, name, data, metadata, version, created_at, updated_at, deleted_at
 	`
@@ -101,7 +101,7 @@ func (r *RecordRepository) Update(ctx context.Context, id uuid.UUID, rec *record
 		&out.Data, &out.MetaData, &out.Version, &out.CreatedAt, &out.UpdatedAt, &out.DeletedAt,
 	)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, record.ErrConflict
 		}
 		return nil, fmt.Errorf("update record: %w", err)
@@ -126,7 +126,7 @@ func (r *RecordRepository) MarkDelete(ctx context.Context, id uuid.UUID, userID 
 	)
 
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, record.ErrNotFound
 		}
 		return nil, fmt.Errorf("mark delete record: %w", err)

@@ -11,6 +11,11 @@ import (
 	"github.com/al-tokarev/gophkeeper/internal/client"
 )
 
+var (
+	buildVersion = "unknown"
+	buildDate    = "unknown"
+)
+
 // serverURL возвращает адрес сервера из переменной окружения GOPHKEEPER_SERVER,
 // либо https://localhost:8080 по умолчанию.
 func serverURL() string {
@@ -21,6 +26,11 @@ func serverURL() string {
 }
 
 func main() {
+	if len(os.Args) > 1 && (os.Args[1] == "--version" || os.Args[1] == "version") {
+		fmt.Printf("gophkeeper %s (built %s)\n", buildVersion, buildDate)
+		return
+	}
+
 	c, err := client.New(serverURL())
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
