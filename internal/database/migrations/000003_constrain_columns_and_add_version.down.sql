@@ -1,0 +1,10 @@
+ALTER TABLE records DROP COLUMN IF EXISTS version;
+
+ALTER TABLE records
+    ALTER COLUMN name TYPE TEXT,
+    ALTER COLUMN type TYPE TEXT,
+    ALTER COLUMN metadata TYPE TEXT;
+
+ALTER TABLE users
+    ALTER COLUMN email TYPE TEXT,
+    ALTER COLUMN password_hash TYPE TEXT;
